@@ -4,7 +4,13 @@ use std::path::PathBuf;
 
 fn main() {
     // set by cargo, build scripts should use this directory for output files
-    let out_dir = PathBuf::from(std::env::var_os("OUT_DIR").unwrap());
+    let out_dir = if "release".to_owned() == std::env::var("PROFILE").unwrap() {
+        let _ = std::fs::remove_dir_all("./iso");
+        std::fs::create_dir("./iso").unwrap();
+        PathBuf::from("./iso")
+    } else {
+        PathBuf::from(std::env::var_os("OUT_DIR").unwrap())
+    };
     // set by cargo's artifact dependency feature, see
     // https://doc.rust-lang.org/nightly/cargo/reference/unstable.html#artifact-dependencies
     let kernel = PathBuf::from(std::env::var_os("CARGO_BIN_FILE_IRON_KERNEL_iron_kernel").unwrap());

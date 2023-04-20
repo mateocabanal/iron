@@ -5,6 +5,9 @@ fn main() {
     let uefi_path = env!("UEFI_PATH");
     let bios_path = env!("BIOS_PATH");
 
+    println!("uefi: {uefi_path}");
+    println!("bios: {bios_path}");
+
     let is_uefi = option_env!("UEFI");
     
     // choose whether to start the UEFI or BIOS image

@@ -1,7 +1,14 @@
+use bootloader_api::BootInfo;
+use conquer_once::spin::OnceCell;
+use spin::Mutex;
 use x86_64::{
     structures::paging::PageTable,
     VirtAddr,
 };
+
+pub static PHYS_MEM_OFFSET: OnceCell<VirtAddr> = OnceCell::uninit();
+pub static FRAME_ALLOCATOR: OnceCell<Mutex<BootInfoFrameAllocator>> = OnceCell::uninit();
+pub static MAPPER: OnceCell<Mutex<OffsetPageTable>> = OnceCell::uninit();
 
 /// Returns a mutable reference to the active level 4 table.
 ///
@@ -84,9 +91,26 @@ use x86_64::structures::paging::OffsetPageTable;
 /// complete physical memory is mapped to virtual memory at the passed
 /// `physical_memory_offset`. Also, this function must be only called once
 /// to avoid aliasing `&mut` references (which is undefined behavior).
-pub unsafe fn init(physical_memory_offset: VirtAddr) -> OffsetPageTable<'static> {
+
+/*pub unsafe fn init(physical_memory_offset: VirtAddr) {
+    PHYS_MEM_OFFSET.init_once(|| {
+        physical_memory_offset.clone()
+    });
     let level_4_table = active_level_4_table(physical_memory_offset);
     OffsetPageTable::new(level_4_table, physical_memory_offset)
+}*/
+
+pub fn init(boot_info: &'static BootInfo) {
+    let offset = boot_info.physical_memory_offset.clone();
+    let phys_mem_offset = VirtAddr::new(offset.into_option().unwrap());
+    unsafe {
+        let page_table = active_level_4_table(phys_mem_offset);
+        let mapper = OffsetPageTable::new(page_table, phys_mem_offset);
+        let frame_allocator = BootInfoFrameAllocator::init(&boot_info.memory_regions);
+        MAPPER.init_once(|| Mutex::new(mapper));
+        FRAME_ALLOCATOR.init_once(|| Mutex::new(frame_allocator));
+        PHYS_MEM_OFFSET.init_once(|| phys_mem_offset);
+    }
 }
 
 pub struct EmptyFrameAllocator;
@@ -125,6 +149,37 @@ pub struct BootInfoFrameAllocator {
     next: usize,
 }
 
+#[macro_export]
+macro_rules! map_physical_to_virtual {
+    ($phys_addr:expr, $virt_addr:expr) => {
+        use x86_64::{PhysAddr, VirtAddr};
+        use x86_64::structures::paging::{Mapper, mapper::MapToError};
+        use x86_64::structures::paging::{Page, Size4KiB, PageTableFlags, PhysFrame};
+        let result = unsafe {
+            $crate::memory::MAPPER.try_get().unwrap().lock().map_to(
+                Page::<Size4KiB>::containing_address(VirtAddr::new($virt_addr)),
+                PhysFrame::containing_address(PhysAddr::new($phys_addr)),
+                PageTableFlags::PRESENT | PageTableFlags::WRITABLE,
+                &mut *$crate::memory::FRAME_ALLOCATOR.try_get().unwrap().lock(),
+            )
+        };
+        match result {
+            Ok(flush) => flush.flush(),
+            Err(err) => match err {
+                MapToError::FrameAllocationFailed => {
+                    panic!("Failed to allocate frame!");
+                }
+                MapToError::PageAlreadyMapped(frame) => {
+                    log::debug!("Already mapped to frame: {:?}", frame);
+                }
+                MapToError::ParentEntryHugePage => {
+                    log::debug!("Already mapped to huge page!");
+                }
+            },
+        };
+    };
+}
+
 impl BootInfoFrameAllocator {
     /// Create a FrameAllocator from the passed memory map.
     ///
@@ -160,3 +215,5 @@ unsafe impl FrameAllocator<Size4KiB> for BootInfoFrameAllocator {
         frame
     }
 }
+
+unsafe impl Send for BootInfoFrameAllocator {}

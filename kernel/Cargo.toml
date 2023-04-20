@@ -1,8 +1,20 @@
+cargo-features = ["per-package-target"]
+
 [package]
 name = "iron_kernel"
 version = "0.1.0"
 edition = "2021"
+forced-target = "x86_64-unknown-none"
 
+[profile.dev]
+panic = "abort"
+
+[profile.release]
+lto = true
+opt-level = "z"
+panic = "abort"
+strip = "symbols"
+codegen-units = 1
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
@@ -13,8 +25,11 @@ uart_16550 = "0.2.18"
 spin = "0.9.8"
 x86_64 = "0.14.10"
 pic8259 = "0.10.1"
+x2apic = "0.4.2"
 linked_list_allocator = "0.9.0"
-
+acpi = "*"
+pc-keyboard = "0.6.1"
+futures-util = { version = "0.3.28", default-features = false, features = ["alloc"] }
 
 [dependencies.noto-sans-mono-bitmap]
 version = "0.2.0"
@@ -26,3 +41,8 @@ features = [
     # required for the fallback char '�'
     "unicode-specials",
 ]
+
+[dependencies.crossbeam-queue]
+version = "0.2.3"
+features = ["alloc"]
+default-features = false

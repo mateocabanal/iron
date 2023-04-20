@@ -1,4 +1,7 @@
-use bootloader_api::info::{FrameBufferInfo, PixelFormat};
+use bootloader_api::{
+    info::{FrameBufferInfo, PixelFormat},
+    BootInfo,
+};
 use core::{fmt, ptr};
 use font_constants::BACKUP_CHAR;
 use noto_sans_mono_bitmap::{
@@ -7,6 +10,10 @@ use noto_sans_mono_bitmap::{
 
 use conquer_once::spin::OnceCell;
 use spin::Mutex;
+
+use crate::framebuffer::font_constants::CHAR_RASTER_WIDTH;
+
+use self::font_constants::CHAR_RASTER_HEIGHT;
 pub static FBWRITER: OnceCell<Mutex<FrameBufferWriter>> = OnceCell::uninit();
 
 /// Additional vertical space between lines
@@ -35,10 +42,12 @@ mod font_constants {
     pub const FONT_WEIGHT: FontWeight = FontWeight::Regular;
 }
 
-pub fn init_global_fb(fb: &'static mut [u8], fb_info: FrameBufferInfo) {
-    FBWRITER.init_once(move || {
-        Mutex::new(FrameBufferWriter::new(fb, fb_info))
-    });
+pub fn init_global_fb(boot_info: &'static BootInfo) {
+    let boot_info = boot_info as *const BootInfo as *mut BootInfo;
+    let boot_info_mut = unsafe { &mut *(boot_info) };
+    let fb = boot_info_mut.framebuffer.as_mut().unwrap();
+    let fb_info = fb.info().clone();
+    FBWRITER.init_once(move || Mutex::new(FrameBufferWriter::new(fb.buffer_mut(), fb_info)));
 }
 
 /// Returns the raster of the given char or the raster of [`font_constants::BACKUP_CHAR`].
@@ -72,6 +81,24 @@ impl FrameBufferWriter {
         };
         logger.clear();
         logger
+    }
+
+    pub fn back_space(&mut self) {
+        if self.x_pos > 0 {
+            self.x_pos -= CHAR_RASTER_WIDTH;
+        }
+
+        if self.x_pos <= 0 {
+            self.x_pos = self.width();
+            if self.y_pos > 0 {
+                self.y_pos -= 1;
+            }
+        }
+        for y in 0..CHAR_RASTER_HEIGHT as usize {
+            for x in 0..CHAR_RASTER_WIDTH {
+                self.write_pixel(self.x_pos + x, self.y_pos + y, 0);
+            }
+        }
     }
 
     fn newline(&mut self) {
@@ -167,8 +194,10 @@ impl fmt::Write for FrameBufferWriter {
 pub fn _print(args: ::core::fmt::Arguments) {
     use core::fmt::Write;
     x86_64::instructions::interrupts::without_interrupts(|| {
-        if let Some(fb) = FBWRITER.get() {
-            fb.lock().write_fmt(args).expect("Printing to serial failed");
+        if let Ok(fb) = FBWRITER.try_get() {
+            fb.lock()
+                .write_fmt(args)
+                .expect("Printing to serial failed");
         }
     });
 }
@@ -177,7 +206,7 @@ pub fn _print(args: ::core::fmt::Arguments) {
 #[macro_export]
 macro_rules! print {
     ($($arg:tt)*) => {
-        $crate::framebuffer::_print(format_args!($($arg)*));
+        $crate::framebuffer::_print(format_args!($($arg)*))
     };
 }
 

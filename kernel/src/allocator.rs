@@ -6,6 +6,8 @@ use x86_64::{
     VirtAddr,
 };
 
+use crate::memory::{MAPPER, FRAME_ALLOCATOR};
+
 pub const HEAP_START: usize = 0x_4444_4444_0000;
 pub const HEAP_SIZE: usize = 100 * 1024; // 100 KiB
 
@@ -13,9 +15,7 @@ pub const HEAP_SIZE: usize = 100 * 1024; // 100 KiB
 static ALLOCATOR: LockedHeap = LockedHeap::empty();
 
 pub fn init_heap(
-    mapper: &mut impl Mapper<Size4KiB>,
-    frame_allocator: &mut impl FrameAllocator<Size4KiB>,
-) -> Result<(), MapToError<Size4KiB>> {
+) {
     // […] map all heap pages to physical frames
     let page_range = {
         let heap_start = VirtAddr::new(HEAP_START as u64);
@@ -25,13 +25,17 @@ pub fn init_heap(
         Page::range_inclusive(heap_start_page, heap_end_page)
     };
 
+    let mut mapper = MAPPER.try_get().unwrap().lock();
+    let mut frame_allocator = FRAME_ALLOCATOR.try_get().unwrap().lock();
+
     for page in page_range {
         let frame = frame_allocator
             .allocate_frame()
-            .ok_or(MapToError::FrameAllocationFailed)?;
+            .expect("failed to allocate frame");
+
         let flags = PageTableFlags::PRESENT | PageTableFlags::WRITABLE;
         unsafe {
-            mapper.map_to(page, frame, flags, frame_allocator)?.flush()
+            mapper.map_to(page, frame, flags, &mut *frame_allocator).expect("failed to map head to frame").flush()
         };
     }
 
@@ -40,5 +44,4 @@ pub fn init_heap(
         ALLOCATOR.lock().init(HEAP_START, HEAP_SIZE);
     }
 
-    Ok(())
 }

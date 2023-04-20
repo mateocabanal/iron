@@ -5,6 +5,7 @@
 use core::panic::PanicInfo;
 
 mod framebuffer;
+use bootloader_api::BootInfo;
 use framebuffer::init_global_fb;
 
 mod logger;
@@ -15,13 +16,13 @@ mod cpu;
 mod memory;
 mod allocator;
 mod task;
-
-use x86_64::VirtAddr;
+mod x2apic;
+mod acpi;
+mod keyboard;
 
 extern crate alloc;
 
 use alloc::vec::Vec;
-use alloc::boxed::Box;
 
 const CONFIG: bootloader_api::BootloaderConfig = {
     let mut config = bootloader_api::BootloaderConfig::new_default();
@@ -44,29 +45,32 @@ fn panic(info: &PanicInfo) -> ! {
     hlt_loop();
 }
 
-fn kernel_main(boot_info: &'static mut bootloader_api::BootInfo) -> ! {
-    let framebuffer = boot_info.framebuffer.as_mut().unwrap();
-    let fb_info = framebuffer.info().clone();
-
-    init_global_fb(framebuffer.buffer_mut(), fb_info);
+fn init(boot_info: &'static BootInfo) {
+    init_global_fb(boot_info);
     init_logger();
-
-    println!("hello from iron_kernel");
+    memory::init(boot_info);
+    allocator::init_heap();
+    let apic = acpi::init(boot_info);
+    x2apic::init(&apic);
     cpu::init();
+}
 
-    let phys_mem_offset = VirtAddr::new(boot_info.physical_memory_offset.into_option().unwrap());
-    let mut mapper = unsafe { memory::init(phys_mem_offset) };
+fn kernel_main(boot_info: &'static mut bootloader_api::BootInfo) -> ! {
+    init(boot_info);
+    println!("init'd cpu");
+    println!("hello from iron_kernel");
 
-    let mut frame_allocator = unsafe { memory::BootInfoFrameAllocator::init(&boot_info.memory_regions) };
-    allocator::init_heap(&mut mapper, &mut frame_allocator)
-        .expect("heap initialization failed");
-
-    let mut executor = task::simple_executor::SimpleExecutor::new();
-    executor.spawn(task::Task::new(example_task()));
-    //executor.run();
 
     let mut vec: Vec<i32> = Vec::new();
     vec.push(5);
+
+    println!("DONE");
+    
+    x86_64::instructions::interrupts::enable();
+
+    let mut executor = task::executor::Executor::new();
+    executor.spawn(task::Task::new(keyboard::print_keypresses()));
+    executor.run();
 
     hlt_loop();
 }
