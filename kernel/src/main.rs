@@ -6,6 +6,7 @@ use core::panic::PanicInfo;
 
 mod framebuffer;
 use bootloader_api::BootInfo;
+use conquer_once::spin::OnceCell;
 use framebuffer::init_global_fb;
 
 mod logger;
@@ -19,10 +20,13 @@ mod task;
 mod x2apic;
 mod acpi;
 mod keyboard;
+mod shell;
 
 extern crate alloc;
 
 use alloc::vec::Vec;
+
+pub static TIMER_FN: OnceCell<fn()> = OnceCell::uninit();
 
 const CONFIG: bootloader_api::BootloaderConfig = {
     let mut config = bootloader_api::BootloaderConfig::new_default();
@@ -68,9 +72,15 @@ fn kernel_main(boot_info: &'static mut bootloader_api::BootInfo) -> ! {
     
     x86_64::instructions::interrupts::enable();
 
+    let shell = shell::Shell::init();
+    TIMER_FN.init_once(|| {
+        let func: fn() =  shell::Shell::update;
+        func
+    });
+
     let mut executor = task::executor::Executor::new();
     executor.spawn(task::Task::new(keyboard::print_keypresses()));
-    executor.run();
+    //executor.run();
 
     hlt_loop();
 }

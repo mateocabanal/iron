@@ -27,6 +27,7 @@ pub enum InterruptIndex {
     Keyboard,
     Mouse,
     ApicError,
+    Syscall,
     ApicSpurious
 }
 
@@ -55,6 +56,7 @@ static IDT: Lazy<InterruptDescriptorTable> = Lazy::new(|| {
     idt[InterruptIndex::ApicError.as_usize()].set_handler_fn(lapic_error);
     idt[InterruptIndex::ApicSpurious.as_usize()].set_handler_fn(spurious_interrupt);
     idt[InterruptIndex::Mouse.as_usize()].set_handler_fn(mouse_interrupt);
+    idt[InterruptIndex::Syscall.as_usize()].set_handler_fn(syscall_handler);
     idt
 });
 
@@ -75,6 +77,10 @@ extern "x86-interrupt" fn keyboard_interrupt_handler(_stack_frame: InterruptStac
 }
 
 extern "x86-interrupt" fn timer_interrupt_handler(_stack_frame: InterruptStackFrame) {
+    if let Ok(func) = crate::TIMER_FN.try_get() {
+        func();
+    }
+
     unsafe {
         LAPIC.try_get().unwrap().lock()
             .end_of_interrupt()

@@ -1,0 +1,15 @@
+const PROMPT: &'static str = "--> ";
+
+use x86_64::instructions::interrupts::without_interrupts;
+
+use crate::framebuffer::FBWRITER;
+
+struct Shell {}
+
+impl Shell {
+    pub fn init() {
+        without_interrupts(|| {
+            let fb = FBWRITER.get().unwrap().lock();
+        });
+    }
+}

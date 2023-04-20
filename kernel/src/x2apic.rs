@@ -1,7 +1,7 @@
 use conquer_once::spin::OnceCell;
 use spin::Mutex;
 use x2apic::ioapic::{IoApic, IrqFlags, IrqMode, RedirectionTableEntry};
-use x2apic::lapic::{xapic_base, LocalApic, LocalApicBuilder};
+use x2apic::lapic::{xapic_base, LocalApic, LocalApicBuilder, TimerDivide};
 use acpi::platform::interrupt::Apic;
 use x86_64::VirtAddr;
 use x86_64::instructions::port::Port;
@@ -39,16 +39,18 @@ pub fn init_lapic(apic: &Apic) {
         .spurious_vector(InterruptIndex::ApicSpurious as usize)
         .timer_vector(InterruptIndex::Timer as usize)
         .error_vector(InterruptIndex::ApicError as usize)
+        .timer_divide(TimerDivide::Div256)
+        .timer_initial(1_000_000_000)
         .set_xapic_base(apic_virt_addr)
        .build()
         .unwrap_or_else(|e| panic!("{}", e));
 
+    log::debug!("LAPIC VERSION: {}", unsafe { lapic.version() });
     unsafe {
         lapic.enable();
     }
 
     LAPIC.init_once(|| Mutex::new(lapic));
-    
 }
 
 unsafe fn init_ioapic(apic: &Apic) {

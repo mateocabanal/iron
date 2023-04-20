@@ -17,15 +17,15 @@ use self::font_constants::CHAR_RASTER_HEIGHT;
 pub static FBWRITER: OnceCell<Mutex<FrameBufferWriter>> = OnceCell::uninit();
 
 /// Additional vertical space between lines
-const LINE_SPACING: usize = 2;
+pub const LINE_SPACING: usize = 2;
 /// Additional horizontal space between characters.
-const LETTER_SPACING: usize = 0;
+pub const LETTER_SPACING: usize = 0;
 
 /// Padding from the border. Prevent that font is too close to border.
 const BORDER_PADDING: usize = 1;
 
 /// Constants for the usage of the [`noto_sans_mono_bitmap`] crate.
-mod font_constants {
+pub mod font_constants {
     use super::*;
 
     /// Height of each char raster. The font size is ~0.84% of this. Thus, this is the line height that
@@ -62,12 +62,45 @@ fn get_char_raster(c: char) -> RasterizedChar {
     get(c).unwrap_or_else(|| get(BACKUP_CHAR).expect("Should get raster of backup char."))
 }
 
+#[derive(Debug, PartialEq)]
+pub enum Color {
+    Red,
+    Yellow,
+    Green,
+    Blue,
+    White
+}
+
+impl Color {
+    const fn get_color_rgb(&self) -> [u8; 3] {
+        match self {
+            Color::Red => [0xf4, 0x43, 0x36],
+            Color::Yellow => [0xff, 0xc1, 0x07],
+            Color::Green => [0x4c, 0xaf, 0x50],
+            Color::Blue => [0x03, 0xa9, 0xf4],
+            Color::White => [0xff, 0xff, 0xff],
+        }
+    }
+    fn get_color_pixel(&self, pixel_format: PixelFormat, intensity: u8) -> [u8; 4] {
+        let [r, g, b] = self
+            .get_color_rgb()
+            .map(|x| (x as u32 * intensity as u32 / 0xff) as u8);
+        match pixel_format {
+            PixelFormat::Rgb => [r, g, b, 0],
+            PixelFormat::Bgr => [b, g, r, 0],
+            PixelFormat::U8 => [intensity >> 4, 0, 0, 0],
+            _ => panic!("Unknown pixel format: {:?}", pixel_format),
+        }
+    }
+}
+
 /// Allows logging text to a pixel-based framebuffer.
 pub struct FrameBufferWriter {
-    framebuffer: &'static mut [u8],
-    info: FrameBufferInfo,
-    x_pos: usize,
-    y_pos: usize,
+    pub framebuffer: &'static mut [u8],
+    pub info: FrameBufferInfo,
+    pub x_pos: usize,
+    pub y_pos: usize,
+    pub color: Color
 }
 
 impl FrameBufferWriter {
@@ -78,6 +111,7 @@ impl FrameBufferWriter {
             info,
             x_pos: 0,
             y_pos: 0,
+            color: Color::White
         };
         logger.clear();
         logger
@@ -157,19 +191,9 @@ impl FrameBufferWriter {
         self.x_pos += rendered_char.width() + LETTER_SPACING;
     }
 
-    fn write_pixel(&mut self, x: usize, y: usize, intensity: u8) {
+    pub fn write_pixel(&mut self, x: usize, y: usize, intensity: u8) {
         let pixel_offset = y * self.info.stride + x;
-        let color = match self.info.pixel_format {
-            PixelFormat::Rgb => [intensity, intensity, intensity / 2, 0],
-            PixelFormat::Bgr => [intensity / 2, intensity, intensity, 0],
-            PixelFormat::U8 => [if intensity > 200 { 0xf } else { 0 }, 0, 0, 0],
-            other => {
-                // set a supported (but invalid) pixel format before panicking to avoid a double
-                // panic; it might not be readable though
-                self.info.pixel_format = PixelFormat::Rgb;
-                panic!("pixel format {:?} not supported in logger", other)
-            }
-        };
+        let color = self.color.get_color_pixel(self.info.pixel_format, intensity);
         let bytes_per_pixel = self.info.bytes_per_pixel;
         let byte_offset = pixel_offset * bytes_per_pixel;
         self.framebuffer[byte_offset..(byte_offset + bytes_per_pixel)]
