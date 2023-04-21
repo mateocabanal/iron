@@ -5,6 +5,7 @@ name = "iron_kernel"
 version = "0.1.0"
 edition = "2021"
 forced-target = "x86_64-unknown-none"
+resolver = "2"
 
 [profile.dev]
 panic = "abort"
@@ -30,6 +31,7 @@ linked_list_allocator = "0.9.0"
 acpi = "*"
 pc-keyboard = "0.6.1"
 futures-util = { version = "0.3.28", default-features = false, features = ["alloc"] }
+fatfs = { version = "0.4", git = "https://github.com/rafalh/rust-fatfs", default-features = false, features = ["alloc", "unicode"] }
 
 [dependencies.noto-sans-mono-bitmap]
 version = "0.2.0"

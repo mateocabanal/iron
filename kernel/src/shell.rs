@@ -38,7 +38,7 @@ impl Shell {
             let y_pos = fb.y_pos;
             let is_color_white = fb.color == crate::framebuffer::Color::White; 
             if is_color_white {
-                fb.color = crate::framebuffer::Color::Blue;
+                fb.color = crate::framebuffer::Color::Black;
             } else {
                 fb.color = crate::framebuffer::Color::White;
             };        

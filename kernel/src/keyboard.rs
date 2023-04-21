@@ -3,7 +3,9 @@ use futures_util::task::AtomicWaker;
 use core::{pin::Pin, task::{Context, Poll}};
 use crossbeam_queue::{ArrayQueue, PopError};
 use futures_util::{stream::Stream, StreamExt};
-use pc_keyboard::{layouts, DecodedKey, HandleControl, Keyboard, ScancodeSet1};
+use pc_keyboard::{layouts, DecodedKey, HandleControl, Keyboard, ScancodeSet1, KeyCode};
+
+use crate::framebuffer::FBWRITER;
 
 const SCANCODE_QUEUE_SIZE: usize = 128;
 
@@ -78,6 +80,9 @@ pub async fn print_keypresses() {
                         }
                     }
                     DecodedKey::RawKey(key) => match key {
+                        KeyCode::ArrowRight => {
+                            FBWRITER.try_get().unwrap().lock().move_cursor_right();
+                        }
                         _ => crate::print!("RAW KEY: {:?}", key)
                     }
                 }

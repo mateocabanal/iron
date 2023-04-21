@@ -34,5 +34,6 @@ pub fn init(boot_info: &'static BootInfo) -> Apic {
         InterruptModel::Apic(apic) => apic,
         _ => panic!("ACPI does not have interrupt model info!"),
     };
+
     return apic_info;
 }

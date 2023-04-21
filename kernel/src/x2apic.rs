@@ -1,13 +1,13 @@
+use acpi::platform::interrupt::Apic;
 use conquer_once::spin::OnceCell;
 use spin::Mutex;
 use x2apic::ioapic::{IoApic, IrqFlags, IrqMode, RedirectionTableEntry};
 use x2apic::lapic::{xapic_base, LocalApic, LocalApicBuilder, TimerDivide};
-use acpi::platform::interrupt::Apic;
-use x86_64::VirtAddr;
 use x86_64::instructions::port::Port;
+use x86_64::VirtAddr;
 
-use crate::println;
 use crate::cpu::interrupts::InterruptIndex;
+use crate::{hlt_loop, println};
 
 pub static LAPIC: OnceCell<Mutex<LocalApic>> = OnceCell::uninit();
 pub static IOAPIC: OnceCell<Mutex<IoApic>> = OnceCell::uninit();
@@ -27,7 +27,9 @@ unsafe fn disable_pic() {
 pub fn init(apic: &Apic) {
     unsafe { disable_pic() }
     init_lapic(apic);
-    unsafe { init_ioapic(apic); }
+    unsafe {
+        init_ioapic(apic);
+    }
 }
 
 pub fn init_lapic(apic: &Apic) {
@@ -35,26 +37,35 @@ pub fn init_lapic(apic: &Apic) {
     let apic_virt_addr = crate::memory::PHYS_MEM_OFFSET.get().unwrap().as_u64() + apic_phys_addr;
     crate::map_physical_to_virtual!(apic_phys_addr, apic_virt_addr);
 
-    let mut lapic = LocalApicBuilder::new()
+    log::trace!("mapped phys addr to virt addr");
+
+    let lapic = LocalApicBuilder::new()
         .spurious_vector(InterruptIndex::ApicSpurious as usize)
         .timer_vector(InterruptIndex::Timer as usize)
         .error_vector(InterruptIndex::ApicError as usize)
-        .timer_divide(TimerDivide::Div256)
-        .timer_initial(1_000_000_000)
+        .timer_divide(TimerDivide::Div2)
+        .timer_initial(100_000_000)
         .set_xapic_base(apic_virt_addr)
-       .build()
-        .unwrap_or_else(|e| panic!("{}", e));
+        .build();
 
-    log::debug!("LAPIC VERSION: {}", unsafe { lapic.version() });
-    unsafe {
-        lapic.enable();
+    if let Ok(mut lapic) = lapic {
+        log::debug!("lapic built successfully!");
+
+        // lapic.version() crashes os!!!
+        // log::debug!("LAPIC VERSION: {}", unsafe { lapic.version() });
+        unsafe {
+            lapic.enable();
+        }
+
+        LAPIC.init_once(|| Mutex::new(lapic));
+    } else {
+        log::error!("lapic failed to build");
+        hlt_loop();
     }
-
-    LAPIC.init_once(|| Mutex::new(lapic));
 }
 
 unsafe fn init_ioapic(apic: &Apic) {
-    let physical_address = apic.io_apics[0].address as u64;
+    let physical_address = apic.io_apics.get(0).unwrap().address as u64;
     let phys_mem_offset = crate::memory::PHYS_MEM_OFFSET.try_get().unwrap();
     let virtual_address = phys_mem_offset.as_u64() + physical_address;
     crate::map_physical_to_virtual!(physical_address, virtual_address);

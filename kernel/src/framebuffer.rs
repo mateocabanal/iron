@@ -64,16 +64,18 @@ fn get_char_raster(c: char) -> RasterizedChar {
 
 #[derive(Debug, PartialEq)]
 pub enum Color {
+    Black,
     Red,
     Yellow,
     Green,
     Blue,
-    White
+    White,
 }
 
 impl Color {
     const fn get_color_rgb(&self) -> [u8; 3] {
         match self {
+            Color::Black => [0x00, 0x00, 0x00],
             Color::Red => [0xf4, 0x43, 0x36],
             Color::Yellow => [0xff, 0xc1, 0x07],
             Color::Green => [0x4c, 0xaf, 0x50],
@@ -100,7 +102,7 @@ pub struct FrameBufferWriter {
     pub info: FrameBufferInfo,
     pub x_pos: usize,
     pub y_pos: usize,
-    pub color: Color
+    pub color: Color,
 }
 
 impl FrameBufferWriter {
@@ -111,7 +113,7 @@ impl FrameBufferWriter {
             info,
             x_pos: 0,
             y_pos: 0,
-            color: Color::White
+            color: Color::White,
         };
         logger.clear();
         logger
@@ -125,13 +127,26 @@ impl FrameBufferWriter {
         if self.x_pos <= 0 {
             self.x_pos = self.width();
             if self.y_pos > 0 {
-                self.y_pos -= 1;
+                self.y_pos -= CHAR_RASTER_HEIGHT.val() + LINE_SPACING;
             }
         }
         for y in 0..CHAR_RASTER_HEIGHT as usize {
             for x in 0..CHAR_RASTER_WIDTH {
                 self.write_pixel(self.x_pos + x, self.y_pos + y, 0);
             }
+        }
+    }
+
+    pub fn move_cursor_right(&mut self) {
+        for y in 0..CHAR_RASTER_HEIGHT as usize {
+            for x in 0..CHAR_RASTER_WIDTH {
+                self.write_pixel(self.x_pos + x, self.y_pos + y, 0);
+            }
+        }
+        if self.x_pos == self.info.width {
+            self.newline();
+        } else {
+            self.x_pos += CHAR_RASTER_WIDTH;
         }
     }
 
@@ -193,7 +208,9 @@ impl FrameBufferWriter {
 
     pub fn write_pixel(&mut self, x: usize, y: usize, intensity: u8) {
         let pixel_offset = y * self.info.stride + x;
-        let color = self.color.get_color_pixel(self.info.pixel_format, intensity);
+        let color = self
+            .color
+            .get_color_pixel(self.info.pixel_format, intensity);
         let bytes_per_pixel = self.info.bytes_per_pixel;
         let byte_offset = pixel_offset * bytes_per_pixel;
         self.framebuffer[byte_offset..(byte_offset + bytes_per_pixel)]
@@ -219,7 +236,9 @@ pub fn _print(args: ::core::fmt::Arguments) {
     use core::fmt::Write;
     x86_64::instructions::interrupts::without_interrupts(|| {
         if let Ok(fb) = FBWRITER.try_get() {
-            fb.lock()
+            let mut fb_lock = fb.lock();
+            fb_lock.color = Color::White;
+            fb_lock
                 .write_fmt(args)
                 .expect("Printing to serial failed");
         }

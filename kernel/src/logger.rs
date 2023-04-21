@@ -1,3 +1,4 @@
+use alloc::format;
 use conquer_once::spin::OnceCell;
 
 use crate::{println, serial_println};
@@ -37,11 +38,12 @@ impl log::Log for LockedLogger {
     }
 
     fn log(&self, record: &log::Record) {
+        let output = format!("{:5} [{}:{}] {}", record.level(), record.file().unwrap(), record.line().unwrap(), record.args());
         if self.framebuffer {
-            println!("{:5}: {}", record.level(), record.args());
+            println!("{}", output);
         }
         if self.serial {
-            serial_println!("{:5}: {}", record.level(), record.args());
+            serial_println!("{}", output);
         }
     }
 
